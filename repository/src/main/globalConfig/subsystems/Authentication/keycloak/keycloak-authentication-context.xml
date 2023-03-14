@@ -60,6 +60,8 @@
         <property name="allowGuestLogin" value="${keycloak.authentication.allowGuestLogin}" />
         <property name="failExpiredTicketTokens" value="${keycloak.authentication.failExpiredTicketTokens}" />
         <property name="deployment" ref="keycloakDeployment" />
+        
+        <property name="missingPersonService" ref="missingPersonService" />
     </bean>
     
     <!-- Wrapped version to be used within subsystem -->
@@ -154,6 +156,8 @@
         <property name="keycloakAuthenticationComponent" ref="authenticationComponent" />
         <property name="keycloakTicketTokenCache" ref="${moduleId}-ticketTokenCache" />
         <property name="publicApiRuntimeContainer" ref="publicapi.container" />
+        
+        <property name="missingPersonService" ref="missingPersonService" />
     </bean>
 
     <bean id="${moduleId}.keycloakAuthenticationListener" class="${project.artifactId}.authentication.KeycloakAuthenticationListener">
@@ -223,6 +227,12 @@
         <property name="transactionService" ref="TransactionService" />
         <property name="authorityService" ref="AuthorityService" />
         <property name="authenticationService" ref="localAuthenticationService" />
+    </bean>
+    
+    <bean id="missingPersonService" class="${project.artifactId}.authentication.MissingPersonServiceImpl">
+        <property name="personService" ref="personService" />
+        <property name="transactionService" ref="TransactionService" />
+        <property name="jobLockService" ref="JobLockService" />
     </bean>
 
     <bean id="userFilter.containedInGroup" class="${project.artifactId}.sync.GroupContainmentUserFilter">

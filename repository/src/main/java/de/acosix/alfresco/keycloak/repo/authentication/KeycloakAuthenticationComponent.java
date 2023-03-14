@@ -15,13 +15,16 @@
  */
 package de.acosix.alfresco.keycloak.repo.authentication;
 
+import java.nio.file.AccessDeniedException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
 import org.alfresco.repo.management.subsystems.ActivateableBean;
 import org.alfresco.repo.security.authentication.AbstractAuthenticationComponent;
 import org.alfresco.repo.security.authentication.AuthenticationException;
+import org.alfresco.repo.transaction.RetryingTransactionHelper;
 import org.alfresco.util.PropertyCheck;
 import org.keycloak.adapters.KeycloakDeployment;
 import org.keycloak.representations.AccessToken;
@@ -36,6 +39,7 @@ import de.acosix.alfresco.keycloak.repo.token.AccessTokenClient;
 import de.acosix.alfresco.keycloak.repo.token.AccessTokenException;
 import de.acosix.alfresco.keycloak.repo.token.AccessTokenRefreshException;
 import de.acosix.alfresco.keycloak.repo.util.RefreshableAccessTokenHolder;
+import net.sf.acegisecurity.Authentication;
 
 /**
  * This component provides Keycloak-integrated user/password authentication support to an Alfresco instance.
@@ -67,6 +71,10 @@ public class KeycloakAuthenticationComponent extends AbstractAuthenticationCompo
     protected AccessTokenClient accessTokenClient;
 
     protected List<TokenProcessor> tokenProcessors;
+    
+    private RetryingTransactionHelper rthelper;
+    
+    private MissingPersonServiceImpl missingPersonService;
 
     /**
      *
@@ -77,12 +85,22 @@ public class KeycloakAuthenticationComponent extends AbstractAuthenticationCompo
     {
         PropertyCheck.mandatory(this, "applicationContext", this.applicationContext);
         PropertyCheck.mandatory(this, "keycloakDeployment", this.deployment);
+        PropertyCheck.mandatory(this, "missingPersonService", this.missingPersonService);
 
         this.accessTokenClient = new AccessTokenClient(this.deployment);
 
         this.tokenProcessors = new ArrayList<>(this.applicationContext.getBeansOfType(TokenProcessor.class, false, true).values());
         Collections.sort(this.tokenProcessors);
         this.tokenProcessors = Collections.unmodifiableList(this.tokenProcessors);
+
+        this.rthelper = new RetryingTransactionHelper();
+        this.rthelper.setMaxRetries(3);
+        this.rthelper.setMinRetryWaitMs(2000);
+        this.rthelper.setTransactionService(this.getTransactionService());
+        this.rthelper.setExtraExceptions(Arrays.asList(
+        		AccessDeniedException.class // likely caused by a race condition, where multiple threads are authenticating at the same time
+        									// this is due to modern web apps and threading
+        		));
     }
 
     /**
@@ -158,6 +176,14 @@ public class KeycloakAuthenticationComponent extends AbstractAuthenticationCompo
     {
         this.deployment = deployment;
     }
+
+    /**
+     * @param missingPersonService
+     *     the missingPersonService to set
+     */    
+    public void setMissingPersonService(MissingPersonServiceImpl missingPersonService) {
+		this.missingPersonService = missingPersonService;
+	}
 
     /**
      * Enables the thread-local storage of the last access token response and verified tokens beyond the internal needs of
@@ -293,5 +319,25 @@ public class KeycloakAuthenticationComponent extends AbstractAuthenticationCompo
     protected boolean implementationAllowsGuestLogin()
     {
         return this.allowGuestLogin;
+    }
+    
+    public Authentication setCurrentUser(final String realUserName) throws AuthenticationException {
+    	RuntimeException lastre = null;
+    	
+		for (int l = 0; l < 2; l++) {
+			LOGGER.trace("Setting current user: {}", realUserName);
+			
+	    	try {
+	    		return super.setCurrentUser(realUserName);
+			} catch (RuntimeException re) {
+				this.missingPersonService.handle(realUserName, re);
+				LOGGER.debug("Missing person handled; looping back: {}", realUserName);
+				lastre = re;
+        	}
+        }
+		
+		if (lastre != null)
+			throw lastre;
+		else throw new IllegalStateException("This should never happen");
     }
 }

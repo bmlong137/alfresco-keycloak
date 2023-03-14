@@ -137,6 +137,8 @@ public class KeycloakAuthenticationFilter extends BaseAuthenticationFilter
     protected SimpleCache<String, RefreshableAccessTokenHolder> keycloakTicketTokenCache;
 
     protected RuntimeContainer publicApiRuntimeContainer;
+    
+    private MissingPersonServiceImpl missingPersonService;
 
     /**
      * {@inheritDoc}
@@ -159,6 +161,7 @@ public class KeycloakAuthenticationFilter extends BaseAuthenticationFilter
         PropertyCheck.mandatory(this, "personService", this.personService);
         PropertyCheck.mandatory(this, "nodeService", this.nodeService);
         PropertyCheck.mandatory(this, "transactionService", this.transactionService);
+        PropertyCheck.mandatory(this, "missingPersonService", this.missingPersonService);
 
         // basic is handled ourselves
         this.keycloakDeployment.setEnableBasicAuth(false);
@@ -290,6 +293,14 @@ public class KeycloakAuthenticationFilter extends BaseAuthenticationFilter
     {
         this.publicApiRuntimeContainer = publicApiRuntimeContainer;
     }
+
+    /**
+     * @param missingPersonService
+     *     the missingPersonService to set
+     */    
+    public void setMissingPersonService(MissingPersonServiceImpl missingPersonService) {
+		this.missingPersonService = missingPersonService;
+	}
 
     /**
      *
@@ -636,7 +647,16 @@ public class KeycloakAuthenticationFilter extends BaseAuthenticationFilter
     @Override
     protected SessionUser createUserEnvironment(final HttpSession session, final String userName) throws IOException, ServletException
     {
-        final SessionUser sessionUser = super.createUserEnvironment(session, userName);
+    	SessionUser sessionUser;
+    	try {
+    		sessionUser = super.createUserEnvironment(session, userName);
+    	}
+    	catch (RuntimeException re)
+    	{
+    		LOGGER.warn("Failed to create user environemnt; trying to resolve: {}", re.getMessage());
+    		this.missingPersonService.handle(userName, re);
+    		sessionUser = super.createUserEnvironment(session, userName);
+    	}
 
         // ensure all common attribute names are mapped
         // Alfresco is really inconsistent with these attribute names
@@ -654,7 +674,16 @@ public class KeycloakAuthenticationFilter extends BaseAuthenticationFilter
     protected SessionUser createUserEnvironment(final HttpSession session, final String userName, final String ticket,
             final boolean externalAuth) throws IOException, ServletException
     {
-        final SessionUser sessionUser = super.createUserEnvironment(session, userName, ticket, externalAuth);
+    	SessionUser sessionUser;
+    	try {
+    		sessionUser = super.createUserEnvironment(session, userName, ticket, externalAuth);
+    	}
+    	catch (RuntimeException re)
+    	{
+    		LOGGER.warn("Failed to create user environemnt; trying to resolve: {}", re.getMessage());
+    		this.missingPersonService.handle(userName, re);
+    		sessionUser = super.createUserEnvironment(session, userName, ticket, externalAuth);
+    	}
 
         // ensure all common attribute names are mapped
         // Alfresco is really inconsistent with these attribute names
@@ -986,7 +1015,7 @@ public class KeycloakAuthenticationFilter extends BaseAuthenticationFilter
             if (sessionUser == null)
             {
                 LOGGER.debug("Propagating through the user identity: {}", AlfrescoCompatibilityUtil.maskUsername(userId));
-                this.authenticationComponent.setCurrentUser(userId);
+                this.keycloakAuthenticationComponent.setCurrentUser(userId);
                 session = httpServletRequest.getSession();
 
                 try

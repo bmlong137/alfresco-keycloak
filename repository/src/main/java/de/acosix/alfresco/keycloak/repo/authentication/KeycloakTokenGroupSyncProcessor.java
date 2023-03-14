@@ -172,13 +172,8 @@ public class KeycloakTokenGroupSyncProcessor implements TokenProcessor, Initiali
             {
                 AuthenticationUtil.runAsSystem(() -> this.transactionService.getRetryingTransactionHelper().doInTransaction(() -> {
                     boolean changed = this.syncGroupMemberships(groups);
-                    if (changed) {
-                    	String ticket = this.authenticationService.getCurrentTicket();
-                    	if (ticket != null) {
-                    		LOGGER.debug("Invalidating Alflresco ticket as group membership changed: {}", ticket);
-                    		this.authenticationService.invalidateTicket(ticket);
-                    	}
-                    }
+                    if (changed)
+                		LOGGER.debug("Group membership changed: {}", accessToken.getSubject());
                     return null;
                 }, false, requiresNew));
             }
@@ -202,7 +197,7 @@ public class KeycloakTokenGroupSyncProcessor implements TokenProcessor, Initiali
         // in case some extractor mapped this pseudo-group
         groups.remove(PermissionService.ALL_AUTHORITIES);
 
-        LOGGER.debug("Mapped user group authorities from access token: {}", groups);
+        LOGGER.debug("Mapped user group authorities from access token: {} => {}", accessToken.getSubject(), groups);
 
         return groups;
     }
