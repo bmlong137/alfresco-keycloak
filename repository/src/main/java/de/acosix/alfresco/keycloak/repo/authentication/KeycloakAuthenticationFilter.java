@@ -45,6 +45,7 @@ import org.alfresco.repo.webdav.auth.AuthenticationDriver;
 import org.alfresco.repo.webdav.auth.BaseAuthenticationFilter;
 import org.alfresco.repo.webdav.auth.BaseSSOAuthenticationFilter;
 import org.alfresco.rest.api.PublicApiTenantWebScriptServletRuntime;
+import org.alfresco.rest.framework.core.exceptions.NotFoundException;
 import org.alfresco.util.PropertyCheck;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
@@ -310,23 +311,33 @@ public class KeycloakAuthenticationFilter extends BaseAuthenticationFilter
                     this.keycloakDeployment.getAuthServerBaseUrl());
         }
 
-        final boolean skip = !keycloakDeploymentReady || this.checkForSkipCondition(context, req, res);
+        // Wrap the call to checkForSkipCondition in a try-catch in order to catch any NotFoundExceptions
+        // and set the status on the response to a 404. This prevents the return of 500 errors which security
+        // scanning determines is a security finding.
+        try {
+            final boolean skip = !keycloakDeploymentReady || this.checkForSkipCondition(context, req, res);
 
-        if (skip)
-        {
-            chain.doFilter(request, response);
-        }
-        else
-        {
-            if (!this.checkAndProcessHttpBasicAuthentication(req))
-            {
-                this.processKeycloakAuthenticationAndActions(context, req, res, chain);
-            }
-            else
+            if (skip)
             {
                 chain.doFilter(request, response);
             }
+            else
+            {
+                if (!this.checkAndProcessHttpBasicAuthentication(req))
+                {
+                    this.processKeycloakAuthenticationAndActions(context, req, res, chain);
+                }
+                else
+                {
+                    chain.doFilter(request, response);
+                }
+            }
+
+        } catch (NotFoundException nfex) {
+            LOGGER.debug("Not Found Exception was returned while handling KeyCloak auth!", nfex);
+            res.setStatus(HttpServletResponse.SC_NOT_FOUND);
         }
+
     }
 
     /**
