@@ -140,13 +140,19 @@
     </dependencies>
 
     <build>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+                <filtering>true</filtering>
+                <targetPath>${project.build.directory}/test-classes</targetPath>
+            </testResource>
+        </testResources>
         <pluginManagement>
             <plugins>
 
                 <plugin>
                     <artifactId>maven-source-plugin</artifactId>
                     <configuration>
-                        <classifier>sources-unshaded</classifier>
                     </configuration>
                 </plugin>
 
